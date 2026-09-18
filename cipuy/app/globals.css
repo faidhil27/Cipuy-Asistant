@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+  }
+
+  body {
+    @apply bg-white text-slate-900 antialiased selection:bg-purple-100 selection:text-purple-900;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Custom Sleek Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a855f7;
+}
+
+/* Markdown typography polish */
+.markdown-container h1 {
+  @apply text-xl font-bold mt-4 mb-2 text-slate-900;
+}
+
+.markdown-container h2 {
+  @apply text-lg font-bold mt-3 mb-1.5 text-slate-900;
+}
+
+.markdown-container h3 {
+  @apply text-base font-semibold mt-2.5 mb-1 text-slate-900;
+}
+
+.markdown-container p {
+  @apply mb-2 leading-relaxed;
+}
+
+.markdown-container pre {
+  @apply my-2.5 rounded-xl;
+}
+
+.markdown-container a {
+  @apply text-purple-600 hover:text-purple-700 underline font-medium;
+}
+
+.markdown-container hr {
+  @apply my-4 border-slate-200;
+}
+
