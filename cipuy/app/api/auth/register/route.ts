@@ -52,6 +52,18 @@ export async function POST(req: NextRequest) {
       throw createError;
     }
 
+    if (newUser?.user) {
+      await adminSupabase.from("profiles").upsert(
+        {
+          id: newUser.user.id,
+          email: newUser.user.email,
+          full_name: fullName || username,
+          role: "user",
+        },
+        { onConflict: "id" }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       message: "Akun berhasil dibuat! Silakan masuk.",
