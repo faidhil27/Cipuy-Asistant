@@ -5,57 +5,73 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { BackgroundMascot } from "@/components/layout/background-mascot";
-import { Sparkles, LogIn, UserPlus, AlertCircle, ArrowRight, Shield } from "lucide-react";
+import { LogIn, UserPlus, AlertCircle, ArrowRight, Shield } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
   const [isSignUp, setIsSignUp] = useState(false);
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
 
   const supabase = createClient();
+
+  // Helper untuk mengubah username menjadi format login yang valid
+  const getAuthEmail = (userInput: string) => {
+    const clean = userInput.trim().toLowerCase();
+    return clean.includes("@") ? clean : `${clean.replace(/[^a-z0-9_]/g, "")}@cipuy.local`;
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
-    setSuccessMessage("");
     setLoading(true);
 
     try {
+      const email = getAuthEmail(username);
+
       if (isSignUp) {
-        // Sign Up Flow
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: fullName || email.split("@")[0],
-            },
-          },
+        // Pendaftaran instan melalui API backend (Auto-Confirm tanpa perlu cek email)
+        const res = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username,
+            password,
+            fullName,
+          }),
         });
 
-        if (error) throw error;
-
-        if (data.session) {
-          router.push("/");
-          router.refresh();
-        } else {
-          setSuccessMessage(
-            "Pendaftaran berhasil! Jika konfirmasi email aktif di Supabase, silakan periksa inbox Anda atau langsung login."
-          );
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Gagal membuat akun.");
         }
+
+        // Langsung login seketika setelah daftar
+        const { error: loginError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (loginError) throw loginError;
+
+        router.push("/");
+        router.refresh();
       } else {
-        // Sign In Flow
+        // Masuk langsung dengan Username & Password
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
 
-        if (error) throw error;
+        if (error) {
+          if (error.message.includes("Invalid login credentials")) {
+            throw new Error("Username atau kata sandi salah. Silakan coba lagi.");
+          }
+          throw error;
+        }
 
         if (data.session) {
           router.push("/");
@@ -64,16 +80,7 @@ export default function LoginPage() {
       }
     } catch (err: any) {
       console.error("Auth error:", err);
-      // Helpful Indonesian error messages
-      if (err.message?.includes("Invalid login credentials")) {
-        setErrorMessage("Email atau kata sandi tidak cocok. Silakan coba lagi.");
-      } else if (err.message?.includes("Email not confirmed")) {
-        setErrorMessage("Email belum dikonfirmasi. Periksa inbox email Anda.");
-      } else if (err.message?.includes("already registered")) {
-        setErrorMessage("Email ini sudah terdaftar. Silakan masuk.");
-      } else {
-        setErrorMessage(err.message || "Gagal melakukan autentikasi.");
-      }
+      setErrorMessage(err.message || "Gagal melakukan autentikasi.");
     } finally {
       setLoading(false);
     }
@@ -112,7 +119,6 @@ export default function LoginPage() {
             onClick={() => {
               setIsSignUp(false);
               setErrorMessage("");
-              setSuccessMessage("");
             }}
             className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
               !isSignUp
@@ -128,7 +134,6 @@ export default function LoginPage() {
             onClick={() => {
               setIsSignUp(true);
               setErrorMessage("");
-              setSuccessMessage("");
             }}
             className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
               isSignUp
@@ -137,22 +142,15 @@ export default function LoginPage() {
             }`}
           >
             <UserPlus className="w-3.5 h-3.5" />
-            <span>Daftar Akun</span>
+            <span>Daftar Cepat</span>
           </button>
         </div>
 
-        {/* Error / Success Feedback */}
+        {/* Error Feedback */}
         {errorMessage && (
           <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 animate-in fade-in">
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <span>{errorMessage}</span>
-          </div>
-        )}
-
-        {successMessage && (
-          <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-start gap-2 animate-in fade-in">
-            <Sparkles className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            <span>{successMessage}</span>
           </div>
         )}
 
@@ -168,7 +166,7 @@ export default function LoginPage() {
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="Misal: Faidh"
+                placeholder="Misal: Faidhil"
                 className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-purple-500 focus:bg-white transition-all"
               />
             </div>
@@ -176,14 +174,14 @@ export default function LoginPage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Alamat Email
+              Username / Nama Pengguna
             </label>
             <input
-              type="email"
+              type="text"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="nama@email.com"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Misal: faidhil27"
               className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-purple-500 focus:bg-white transition-all"
             />
           </div>
@@ -212,7 +210,7 @@ export default function LoginPage() {
               <span className="inline-block animate-spin">⏳</span>
             ) : isSignUp ? (
               <>
-                <span>Daftar Akun Cipuy</span>
+                <span>Daftar & Langsung Masuk</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </>
             ) : (
@@ -224,15 +222,14 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Informative Note for Admin Setup */}
+        {/* Informative Note */}
         <div className="mt-5 pt-4 border-t border-slate-100 flex items-start gap-2 text-[11px] text-slate-400">
           <Shield className="w-3.5 h-3.5 flex-shrink-0 text-purple-600 mt-0.5" />
           <span>
-            Akun pertama yang mendaftar akan otomatis memiliki peran <strong>Administrator</strong> untuk mengelola prompt dan database.
+            Pendaftaran instan tanpa ribet verifikasi email. Akun pertama yang mendaftar otomatis menjadi <strong>Administrator</strong>.
           </span>
         </div>
       </div>
     </div>
   );
 }
-
