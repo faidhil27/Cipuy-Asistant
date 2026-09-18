@@ -28,17 +28,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Fetch conversations with user profile information
-    const { data: conversations, error: convError } = await adminSupabase
+    // Fetch profiles map for joining
+    const { data: allProfiles } = await adminSupabase
+      .from("profiles")
+      .select("id, email, full_name");
+
+    const profilesMap = new Map((allProfiles || []).map((p) => [p.id, p]));
+
+    // Fetch conversations
+    const { data: rawConversations, error: convError } = await adminSupabase
       .from("conversations")
-      .select(`
-        id,
-        user_id,
-        title,
-        created_at,
-        updated_at,
-        profiles (email, full_name)
-      `)
+      .select("id, user_id, title, created_at, updated_at")
       .order("updated_at", { ascending: false })
       .limit(50);
 
@@ -46,20 +46,26 @@ export async function GET(req: NextRequest) {
       throw convError;
     }
 
+    const conversations = (rawConversations || []).map((c) => ({
+      ...c,
+      profiles: profilesMap.get(c.user_id),
+    }));
+
     // Fetch recent messages across all users
-    const { data: messages, error: msgError } = await adminSupabase
+    const { data: rawMessages, error: msgError } = await adminSupabase
       .from("messages")
-      .select(`
-        id,
-        conversation_id,
-        user_id,
-        role,
-        content,
-        created_at,
-        profiles (email, full_name)
-      `)
+      .select("id, conversation_id, user_id, role, content, created_at")
       .order("created_at", { ascending: false })
       .limit(100);
+
+    if (msgError) {
+      throw msgError;
+    }
+
+    const messages = (rawMessages || []).map((m) => ({
+      ...m,
+      profiles: profilesMap.get(m.user_id),
+    }));
 
     if (msgError) {
       throw msgError;
