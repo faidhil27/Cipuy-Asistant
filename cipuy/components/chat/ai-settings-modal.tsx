@@ -89,10 +89,10 @@ Kamu sangat ahli dalam pemrograman, analisis data, penulisan konten, riset, peny
             onChange={(e) => setLocalModel(e.target.value)}
             className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-purple-500 focus:bg-white"
           >
-            <option value="gemini-2.0-flash">Gemini 2.0 Flash (Paling Cepat &amp; Direkomendasikan)</option>
-            <option value="gemini-1.5-flash">Gemini 1.5 Flash (Sangat Stabil &amp; Ringan)</option>
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Generasi AI Baru)</option>
-            <option value="gemini-3.6-flash">Gemini 3.6 Flash (Resmi)</option>
+            <option value="gemini-flash-lite-latest">Gemini Flash Lite (Super Cepat &amp; Kuota Tinggi - Rekomendasi)</option>
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Sangat Stabil)</option>
+            <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Generasi Terkini)</option>
+            <option value="gemini-flash-latest">Gemini Flash Latest (Standar Google)</option>
           </select>
         </div>
 

@@ -36,7 +36,7 @@ export default function Home() {
     "Namamu adalah Cipuy. Kamu adalah asisten AI pribadi yang cerdas, ramah, dan setia yang diciptakan, dikonsep, dan dimiliki oleh Faidhil. Jika ditanya siapa owner atau penciptamu, kamu selalu menjawab dengan bangga bahwa penciptamu adalah Faidhil!"
   );
   const [temperature, setTemperature] = useState<number>(0.7);
-  const [model, setModel] = useState<string>("gemini-2.0-flash");
+  const [model, setModel] = useState<string>("gemini-flash-lite-latest");
 
   // Load saved settings from localStorage on client
   useEffect(() => {
@@ -48,10 +48,11 @@ export default function Home() {
       if (savedPrompt) setSystemPrompt(savedPrompt);
       if (savedTemp) setTemperature(parseFloat(savedTemp));
       if (savedModel) {
-        // Auto-migrasi jika user punya cache model lama yang lambat/bermasalah
-        if (savedModel === "gemini-pro" || savedModel === "gemini-1.5-pro") {
-          setModel("gemini-2.0-flash");
-          localStorage.setItem("cipuy_model", "gemini-2.0-flash");
+        // Auto-migrasi jika user punya cache model lama yang deprecated / terkena limit kuota 20
+        const legacyModels = ["gemini-pro", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash", "gemini-3.6-flash"];
+        if (legacyModels.includes(savedModel)) {
+          setModel("gemini-flash-lite-latest");
+          localStorage.setItem("cipuy_model", "gemini-flash-lite-latest");
         } else {
           setModel(savedModel);
         }

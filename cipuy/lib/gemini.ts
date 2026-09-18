@@ -24,7 +24,7 @@ export async function askGemini({
   history = [],
   systemInstruction = DEFAULT_SYSTEM_INSTRUCTION,
   temperature = 0.7,
-  modelName = process.env.GEMINI_MODEL || "gemini-2.0-flash",
+  modelName = "gemini-flash-lite-latest",
 }: {
   prompt: string;
   history?: ChatMessageHistory[];
@@ -42,12 +42,18 @@ export async function askGemini({
 
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  // Model prioritas: model terpilih -> 2.0-flash -> 1.5-flash -> 2.5-flash
+  // Model cascade dengan urutan paling stabil, cepat, dan kuota luas:
+  // 1. Model pilihan user / flash-lite-latest (kuota tinggi, anti-503, anti-429)
+  // 2. gemini-2.5-flash-lite (sangat stabil & responsif)
+  // 3. gemini-3.1-flash-lite (generasi 3.1 terkini)
+  // 4. gemini-flash-latest
+  // 5. gemini-3.6-flash (fallback)
   const candidateModels = [
     modelName,
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-2.5-flash",
+    "gemini-flash-lite-latest",
+    "gemini-2.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-latest",
     "gemini-3.6-flash",
   ].filter((v, i, a) => v && a.indexOf(v) === i);
 
@@ -64,35 +70,43 @@ export async function askGemini({
         },
       });
 
-      // Coba generate via chat history jika ada
+      // 1. Coba percakapan dengan riwayat (multi-turn) jika ada
       if (history && history.length > 0) {
         try {
           const chat = model.startChat({ history });
           const result = await chat.sendMessage(prompt);
           const response = await result.response;
-          return response.text();
-        } catch (chatError: any) {
-          console.warn(
-            `Chat multiturn dengan model ${currentModel} gagal (${chatError?.message}), mencoba direct generation tanpa corrupt history...`
-          );
+          const text = response.text();
+          if (text && text.trim().length > 0) {
+            return text;
+          }
+        } catch (chatErr: any) {
+          console.warn(`Model ${currentModel} chat error (${chatErr?.message}), mencoba direct generation...`);
+          // Jika chat multiturn gagal karena format history, coba direct prompt
           const fallbackResult = await model.generateContent(prompt);
           const fallbackResponse = await fallbackResult.response;
-          return fallbackResponse.text();
+          const fallbackText = fallbackResponse.text();
+          if (fallbackText && fallbackText.trim().length > 0) {
+            return fallbackText;
+          }
         }
       } else {
-        // Chat tunggal (tanpa history)
+        // 2. Chat tunggal langsung
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        return response.text();
+        const text = response.text();
+        if (text && text.trim().length > 0) {
+          return text;
+        }
       }
     } catch (error: any) {
-      console.warn(`Model ${currentModel} gagal:`, error?.message);
+      console.warn(`Model ${currentModel} gagal (${error?.message}). Mencoba model berikutnya...`);
       modelErrors.push(`[${currentModel}]: ${error?.message || error}`);
     }
   }
 
   console.error("Semua model Gemini gagal:", modelErrors);
   throw new Error(
-    `Semua model Gemini gagal: ${modelErrors.join(" || ")}`
+    "Layanan Google Gemini sedang mengalami lonjakan beban sesaat. Silakan coba kirim ulang pesan dalam beberapa detik."
   );
 }
