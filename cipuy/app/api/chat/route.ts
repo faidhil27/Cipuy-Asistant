@@ -1,6 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { askGemini, ChatMessageHistory } from "@/lib/gemini";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { askGemini, ChatMessageHistory, DEFAULT_SYSTEM_INSTRUCTION } from "@/lib/gemini";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 30; // Maksimalkan batas waktu timeout Serverless Vercel
+
+// Sanitizer riwayat percakapan agar 100% valid sesuai aturan Gemini API:
+// 1. Dimulai dengan 'user'
+// 2. Berselang-seling: user -> model -> user -> model
+// 3. Diakhiri dengan 'model' (karena prompt baru yang dikirim berikutnya adalah 'user')
+function sanitizeHistory(
+  rawMessages: { role: string; content: string }[]
+): ChatMessageHistory[] {
+  const validHistory: ChatMessageHistory[] = [];
+  let expectedRole: "user" | "model" = "user";
+
+  for (const msg of rawMessages) {
+    const role: "user" | "model" = msg.role === "assistant" ? "model" : "user";
+    const text = msg.content?.trim();
+    if (!text) continue;
+
+    if (role === expectedRole) {
+      validHistory.push({
+        role,
+        parts: [{ text }],
+      });
+      expectedRole = expectedRole === "user" ? "model" : "user";
+    }
+  }
+
+  // Gemini API mewajibkan history berakhir dengan 'model'
+  while (
+    validHistory.length > 0 &&
+    validHistory[validHistory.length - 1].role !== "model"
+  ) {
+    validHistory.pop();
+  }
+
+  return validHistory;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,17 +63,17 @@ export async function POST(req: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
+    const adminSupabase = createAdminClient();
     let conversationId = incomingConvId;
     let newConversationTitle = "";
 
-    // If user is authenticated and Supabase is configured:
+    // 1. Simpan sesi percakapan baru jika belum ada
     if (user) {
-      // If no conversationId provided, create a new conversation session
       if (!conversationId) {
-        // Create title from first 30 characters of prompt
         newConversationTitle =
           prompt.trim().slice(0, 35) + (prompt.length > 35 ? "..." : "");
-        const { data: convData, error: convError } = await supabase
+
+        const { data: convData, error: convError } = await adminSupabase
           .from("conversations")
           .insert({
             user_id: user.id,
@@ -50,9 +89,9 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // If we have a conversationId, save user message
+      // Simpan pesan pengguna ke database
       if (conversationId) {
-        await supabase.from("messages").insert({
+        await adminSupabase.from("messages").insert({
           conversation_id: conversationId,
           user_id: user.id,
           role: "user",
@@ -61,10 +100,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Retrieve previous messages for conversation context (multi-turn memory)
+    // 2. Ambil riwayat percakapan sebelumnya untuk memori multi-turn
     let history: ChatMessageHistory[] = [];
     if (user && conversationId) {
-      const { data: previousMessages } = await supabase
+      const { data: previousMessages } = await adminSupabase
         .from("messages")
         .select("role, content")
         .eq("conversation_id", conversationId)
@@ -72,16 +111,13 @@ export async function POST(req: NextRequest) {
         .limit(20);
 
       if (previousMessages && previousMessages.length > 1) {
-        // Exclude the message we just inserted so it's only passed as the current prompt
+        // Exclude pesan user yang baru saja kita masukkan agar tidak duplikat
         const historyRows = previousMessages.slice(0, -1);
-        history = historyRows.map((msg) => ({
-          role: msg.role === "assistant" ? "model" : "user",
-          parts: [{ text: msg.content }],
-        }));
+        history = sanitizeHistory(historyRows);
       }
     }
 
-    // Pastikan persona dan aturan owner Faidhil selalu menjadi prioritas utama
+    // 3. Pastikan persona dan kepemilikan Faidhil selalu menjadi prioritas utama
     const ownerRule = `[IDENTITAS UTAMA DAN OWNER MUTLAK CIPUY]
 Nama kamu adalah Cipuy. Kamu diciptakan, dikonsep, dan dimiliki oleh Faidhil (@faidhil27). Faidhil adalah bos, kreator, dan owner utama kamu.
 Jika ditanya siapapun tentang siapa ownermu, siapa penciptamu, pembuatmu, atau bosmu, kamu HARUS selalu menjawab dengan bangga, tegas, dan setia bahwa owner dan penciptamu adalah Faidhil!
@@ -89,20 +125,20 @@ Jika ditanya siapapun tentang siapa ownermu, siapa penciptamu, pembuatmu, atau b
 
     const effectiveInstruction = systemInstruction
       ? `${ownerRule}\n\n${systemInstruction}`
-      : ownerRule;
+      : `${ownerRule}\n\n${DEFAULT_SYSTEM_INSTRUCTION}`;
 
-    // Call Google Gemini API
+    // 4. Panggil model Google Gemini dengan fallback otomatis
     const aiResponseText = await askGemini({
       prompt: prompt.trim(),
       history,
       systemInstruction: effectiveInstruction,
-      temperature,
-      modelName,
+      temperature: typeof temperature === "number" ? temperature : 0.7,
+      modelName: modelName || "gemini-2.0-flash",
     });
 
-    // Save AI response to Supabase
+    // 5. Simpan balasan AI ke database Supabase
     if (user && conversationId) {
-      await supabase.from("messages").insert({
+      await adminSupabase.from("messages").insert({
         conversation_id: conversationId,
         user_id: user.id,
         role: "assistant",
@@ -127,4 +163,3 @@ Jika ditanya siapapun tentang siapa ownermu, siapa penciptamu, pembuatmu, atau b
     );
   }
 }
-

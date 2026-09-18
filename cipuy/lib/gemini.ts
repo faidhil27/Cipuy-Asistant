@@ -24,7 +24,7 @@ export async function askGemini({
   history = [],
   systemInstruction = DEFAULT_SYSTEM_INSTRUCTION,
   temperature = 0.7,
-  modelName = process.env.GEMINI_MODEL || "gemini-3.6-flash",
+  modelName = process.env.GEMINI_MODEL || "gemini-2.0-flash",
 }: {
   prompt: string;
   history?: ChatMessageHistory[];
@@ -42,13 +42,14 @@ export async function askGemini({
 
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  // Model candidate list jika model utama gagal/deprecated
+  // Model prioritas: model terpilih -> 2.0-flash -> 1.5-flash -> 2.5-flash
   const candidateModels = [
     modelName,
-    "gemini-3.6-flash",
-    "gemini-3.8-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
     "gemini-2.5-flash",
-  ].filter((v, i, a) => v && a.indexOf(v) === i); // remove duplicates
+    "gemini-3.6-flash",
+  ].filter((v, i, a) => v && a.indexOf(v) === i);
 
   let lastError: any = null;
 
@@ -63,22 +64,38 @@ export async function askGemini({
         },
       });
 
-      const chat = model.startChat({
-        history: history,
-      });
-
-      const result = await chat.sendMessage(prompt);
-      const response = await result.response;
-      return response.text();
+      // Coba generate via chat history jika ada
+      if (history && history.length > 0) {
+        try {
+          const chat = model.startChat({ history });
+          const result = await chat.sendMessage(prompt);
+          const response = await result.response;
+          return response.text();
+        } catch (chatError: any) {
+          console.warn(
+            `Chat multiturn dengan model ${currentModel} gagal (${chatError?.message}), mencoba direct generation tanpa corrupt history...`
+          );
+          // Jika gagal karena struktur multiturn, langsung fallback ke generateContent tanpa crash
+          const fallbackResult = await model.generateContent(prompt);
+          const fallbackResponse = await fallbackResult.response;
+          return fallbackResponse.text();
+        }
+      } else {
+        // Chat tunggal (tanpa history)
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return response.text();
+      }
     } catch (error: any) {
-      console.warn(`Model ${currentModel} gagal, mencoba model berikutnya...`, error?.message);
+      console.warn(`Model ${currentModel} gagal:`, error?.message);
       lastError = error;
-      // Lanjut ke model berikutnya dalam candidateModels
+      // Coba model berikutnya dalam candidateModels
     }
   }
 
   console.error("Semua model Gemini gagal:", lastError);
   throw new Error(
-    lastError?.message || "Gagal mendapatkan balasan dari Google Gemini."
+    lastError?.message ||
+      "Gagal mendapatkan balasan dari Cipuy AI. Silakan coba sesaat lagi."
   );
 }

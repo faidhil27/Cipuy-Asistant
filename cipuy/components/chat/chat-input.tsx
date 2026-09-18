@@ -8,6 +8,7 @@ interface ChatInputProps {
   isLoading: boolean;
   onStopGeneration?: () => void;
   onOpenTemplates?: () => void;
+  modelName?: string;
 }
 
 export function ChatInput({
@@ -15,6 +16,7 @@ export function ChatInput({
   isLoading,
   onStopGeneration,
   onOpenTemplates,
+  modelName = "Gemini 2.0 Flash",
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -170,8 +172,9 @@ export function ChatInput({
 
         {/* Footer info tip */}
         <div className="flex items-center justify-between mt-1 px-2 text-[11px] text-slate-400">
-          <div className="flex items-center gap-1">
-            <span>Model: Google Gemini Pro</span>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+            <span>Model: {modelName.replace("gemini-", "Gemini ").replace("-flash", " Flash").replace("-pro", " Pro")} (Aktif & Cepat)</span>
           </div>
           <span>Tekan Shift + Enter untuk baris baru</span>
         </div>
