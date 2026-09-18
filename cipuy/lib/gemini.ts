@@ -51,7 +51,7 @@ export async function askGemini({
     "gemini-3.6-flash",
   ].filter((v, i, a) => v && a.indexOf(v) === i);
 
-  let lastError: any = null;
+  const modelErrors: string[] = [];
 
   for (const currentModel of candidateModels) {
     try {
@@ -75,7 +75,6 @@ export async function askGemini({
           console.warn(
             `Chat multiturn dengan model ${currentModel} gagal (${chatError?.message}), mencoba direct generation tanpa corrupt history...`
           );
-          // Jika gagal karena struktur multiturn, langsung fallback ke generateContent tanpa crash
           const fallbackResult = await model.generateContent(prompt);
           const fallbackResponse = await fallbackResult.response;
           return fallbackResponse.text();
@@ -88,14 +87,12 @@ export async function askGemini({
       }
     } catch (error: any) {
       console.warn(`Model ${currentModel} gagal:`, error?.message);
-      lastError = error;
-      // Coba model berikutnya dalam candidateModels
+      modelErrors.push(`[${currentModel}]: ${error?.message || error}`);
     }
   }
 
-  console.error("Semua model Gemini gagal:", lastError);
+  console.error("Semua model Gemini gagal:", modelErrors);
   throw new Error(
-    lastError?.message ||
-      "Gagal mendapatkan balasan dari Cipuy AI. Silakan coba sesaat lagi."
+    `Semua model Gemini gagal: ${modelErrors.join(" || ")}`
   );
 }
