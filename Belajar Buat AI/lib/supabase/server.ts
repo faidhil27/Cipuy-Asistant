@@ -11,20 +11,24 @@ export function createClient() {
     supabaseAnonKey || "placeholder-key",
     {
       cookies: {
-        getAll() {
-          return cookieStore.getAll();
+        get(name: string) {
+          return cookieStore.get(name)?.value;
         },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options?: any }>) {
+        set(name: string, value: string, options: any) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
+            cookieStore.set({ name, value, ...options });
           } catch {
-            // Can happen in Server Component render
+            // Abaikan jika dipanggil di server component
+          }
+        },
+        remove(name: string, options: any) {
+          try {
+            cookieStore.set({ name, value: "", ...options });
+          } catch {
+            // Abaikan jika dipanggil di server component
           }
         },
       },
     }
   );
 }
-
