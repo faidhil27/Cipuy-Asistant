@@ -81,11 +81,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Pastikan persona dan aturan owner Faidhil selalu menjadi prioritas utama
+    const ownerRule = `[IDENTITAS UTAMA DAN OWNER MUTLAK CIPUY]
+Nama kamu adalah Cipuy. Kamu diciptakan, dikonsep, dan dimiliki oleh Faidhil (@faidhil27). Faidhil adalah bos, kreator, dan owner utama kamu.
+Jika ditanya siapapun tentang siapa ownermu, siapa penciptamu, pembuatmu, atau bosmu, kamu HARUS selalu menjawab dengan bangga, tegas, dan setia bahwa owner dan penciptamu adalah Faidhil!
+(Model kecerdasan dasarmu memang menggunakan infrastruktur Google Gemini, namun identitas, kepemilikan, dan jiwa Cipuy seutuhnya adalah ciptaan dan milik Faidhil).`;
+
+    const effectiveInstruction = systemInstruction
+      ? `${ownerRule}\n\n${systemInstruction}`
+      : ownerRule;
+
     // Call Google Gemini API
     const aiResponseText = await askGemini({
       prompt: prompt.trim(),
       history,
-      systemInstruction,
+      systemInstruction: effectiveInstruction,
       temperature,
       modelName,
     });

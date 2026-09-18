@@ -33,7 +33,7 @@ export default function Home() {
 
   // AI custom configuration state
   const [systemPrompt, setSystemPrompt] = useState<string>(
-    "Namamu adalah Cipuy. Kamu adalah asisten AI pribadi yang cerdas, ramah, dan berbahasa Indonesia dengan santun dan solutif."
+    "Namamu adalah Cipuy. Kamu adalah asisten AI pribadi yang cerdas, ramah, dan setia yang diciptakan, dikonsep, dan dimiliki oleh Faidhil. Jika ditanya siapa owner atau penciptamu, kamu selalu menjawab dengan bangga bahwa penciptamu adalah Faidhil!"
   );
   const [temperature, setTemperature] = useState<number>(0.7);
   const [model, setModel] = useState<string>("gemini-3.6-flash");
