@@ -36,7 +36,7 @@ export default function Home() {
     "Namamu adalah Cipuy. Kamu adalah asisten AI pribadi yang cerdas, ramah, dan berbahasa Indonesia dengan santun dan solutif."
   );
   const [temperature, setTemperature] = useState<number>(0.7);
-  const [model, setModel] = useState<string>("gemini-1.5-pro");
+  const [model, setModel] = useState<string>("gemini-3.6-flash");
 
   // Load saved settings from localStorage on client
   useEffect(() => {

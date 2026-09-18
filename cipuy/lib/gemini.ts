@@ -15,7 +15,7 @@ export async function askGemini({
   history = [],
   systemInstruction = DEFAULT_SYSTEM_INSTRUCTION,
   temperature = 0.7,
-  modelName = process.env.GEMINI_MODEL || "gemini-1.5-pro",
+  modelName = process.env.GEMINI_MODEL || "gemini-3.6-flash",
 }: {
   prompt: string;
   history?: ChatMessageHistory[];
@@ -27,43 +27,49 @@ export async function askGemini({
 
   if (!apiKey || apiKey === "your-google-gemini-api-key") {
     throw new Error(
-      "GEMINI_API_KEY belum dikonfigurasi. Silakan tambahkan GEMINI_API_KEY di file .env.local atau di dashboard Vercel."
+      "GEMINI_API_KEY belum dikonfigurasi. Silakan tambahkan GEMINI_API_KEY di dashboard Vercel."
     );
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  try {
-    const model = genAI.getGenerativeModel({
-      model: modelName,
-      systemInstruction: systemInstruction || DEFAULT_SYSTEM_INSTRUCTION,
-      generationConfig: {
-        temperature: temperature,
-        maxOutputTokens: 4096,
-      },
-    });
+  // Model candidate list jika model utama gagal/deprecated
+  const candidateModels = [
+    modelName,
+    "gemini-3.6-flash",
+    "gemini-3.8-flash",
+    "gemini-2.5-flash",
+  ].filter((v, i, a) => v && a.indexOf(v) === i); // remove duplicates
 
-    const chat = model.startChat({
-      history: history,
-    });
+  let lastError: any = null;
 
-    const result = await chat.sendMessage(prompt);
-    const response = await result.response;
-    return response.text();
-  } catch (error: any) {
-    console.error("Error from Gemini API:", error);
-    // If the specified model fails (e.g. 404 on custom model name), fallback to gemini-1.5-flash
-    if (modelName !== "gemini-1.5-flash" && error?.message?.includes("not found")) {
-      console.warn("Fallback to gemini-1.5-flash...");
-      const fallbackModel = genAI.getGenerativeModel({
-        model: "gemini-1.5-flash",
+  for (const currentModel of candidateModels) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: currentModel,
         systemInstruction: systemInstruction || DEFAULT_SYSTEM_INSTRUCTION,
+        generationConfig: {
+          temperature: temperature,
+          maxOutputTokens: 4096,
+        },
       });
-      const chat = fallbackModel.startChat({ history });
-      const result = await chat.sendMessage(prompt);
-      return (await result.response).text();
-    }
-    throw new Error(error?.message || "Gagal mendapatkan respon dari Google Gemini.");
-  }
-}
 
+      const chat = model.startChat({
+        history: history,
+      });
+
+      const result = await chat.sendMessage(prompt);
+      const response = await result.response;
+      return response.text();
+    } catch (error: any) {
+      console.warn(`Model ${currentModel} gagal, mencoba model berikutnya...`, error?.message);
+      lastError = error;
+      // Lanjut ke model berikutnya dalam candidateModels
+    }
+  }
+
+  console.error("Semua model Gemini gagal:", lastError);
+  throw new Error(
+    lastError?.message || "Gagal mendapatkan balasan dari Google Gemini."
+  );
+}
