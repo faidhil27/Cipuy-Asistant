@@ -2,14 +2,13 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { BackgroundMascot } from "@/components/layout/background-mascot";
 import { LogIn, UserPlus, AlertCircle, ArrowRight, Shield, Clock, CheckCircle2 } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [isSignUp, setIsSignUp] = useState(false);
   const [username, setUsername] = useState("");
@@ -23,10 +22,13 @@ export default function LoginPage() {
 
   // Cek apakah ada redirect karena akun belum di-ACC
   useEffect(() => {
-    if (searchParams.get("error") === "unapproved") {
-      setErrorMessage("Akun ini belum diresmikan, hubungi admin");
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("error") === "unapproved") {
+        setErrorMessage("Akun ini belum diresmikan, hubungi admin");
+      }
     }
-  }, [searchParams]);
+  }, []);
 
   // Helper untuk mengubah username menjadi format login yang valid
   const getAuthEmail = (userInput: string) => {
