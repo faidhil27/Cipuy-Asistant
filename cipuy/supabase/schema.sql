@@ -12,8 +12,13 @@ create table if not exists public.profiles (
   email text,
   full_name text,
   role text default 'user' check (role in ('user', 'admin')),
+  is_approved boolean default false,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
+
+-- Migration jika tabel profiles sudah ada sebelumnya:
+alter table public.profiles add column if not exists is_approved boolean default false;
+update public.profiles set is_approved = true where role = 'admin';
 
 -- 3. Tabel Conversations (Daftar sesi obrolan pengguna)
 create table if not exists public.conversations (
@@ -66,12 +71,13 @@ begin
     assigned_role := 'user';
   end if;
 
-  insert into public.profiles (id, email, full_name, role)
+  insert into public.profiles (id, email, full_name, role, is_approved)
   values (
     new.id,
     new.email,
     coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
-    assigned_role
+    assigned_role,
+    case when assigned_role = 'admin' then true else coalesce((new.raw_user_meta_data->>'is_approved')::boolean, false) end
   );
   return new;
 end;

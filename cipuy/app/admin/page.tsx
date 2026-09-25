@@ -29,10 +29,16 @@ import {
   Sparkles,
   ChevronRight,
   Filter,
+  Clock,
+  UserCheck,
+  UserX,
+  ShieldCheck,
 } from "lucide-react";
 
 interface AdminStats {
   totalUsers: number;
+  pendingUsers: number;
+  approvedUsers: number;
   totalConversations: number;
   totalMessages: number;
 }
@@ -42,6 +48,7 @@ interface UserItem {
   email: string;
   full_name?: string;
   role: "admin" | "user";
+  is_approved?: boolean;
   created_at: string;
   conversationsCount: number;
   messagesCount: number;
@@ -82,6 +89,8 @@ export default function AdminDashboardPage() {
 
   const [stats, setStats] = useState<AdminStats>({
     totalUsers: 0,
+    pendingUsers: 0,
+    approvedUsers: 0,
     totalConversations: 0,
     totalMessages: 0,
   });
@@ -92,6 +101,8 @@ export default function AdminDashboardPage() {
   // Filtering for Users Tab
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState<"all" | "admin" | "user">("all");
+  const [userStatusFilter, setUserStatusFilter] = useState<"all" | "pending" | "approved">("all");
+  const [approvingUserId, setApprovingUserId] = useState<string | null>(null);
 
   // Filtering for Global Messages Tab
   const [globalSearch, setGlobalSearch] = useState("");
@@ -148,7 +159,15 @@ export default function AdminDashboardPage() {
       const res = await fetch("/api/admin/logs");
       if (res.ok) {
         const data = await res.json();
-        setStats(data.stats || { totalUsers: 0, totalConversations: 0, totalMessages: 0 });
+        setStats(
+          data.stats || {
+            totalUsers: 0,
+            pendingUsers: 0,
+            approvedUsers: 0,
+            totalConversations: 0,
+            totalMessages: 0,
+          }
+        );
         setUsersList(data.users || []);
         setMessages(data.messages || []);
       }
@@ -162,6 +181,47 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     fetchAdminData();
   }, []);
+
+  // Setujui atau Cabut ACC Akun Pengguna
+  const handleApproveUser = async (user: UserItem, approve: boolean) => {
+    setApprovingUserId(user.id);
+    try {
+      const res = await fetch("/api/admin/users/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, approve }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal mengubah status persetujuan akun.");
+      }
+
+      // Update optimistik pada daftar lokal
+      setUsersList((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, is_approved: approve } : u))
+      );
+
+      // Update counter statistik
+      setStats((prev) => {
+        const diff = approve ? 1 : -1;
+        return {
+          ...prev,
+          pendingUsers: Math.max(0, prev.pendingUsers - diff),
+          approvedUsers: Math.max(0, prev.approvedUsers + diff),
+        };
+      });
+
+      setActionResult(
+        approve
+          ? `Akun ${user.full_name || user.email} berhasil di-ACC / diresmikan!`
+          : `Status ACC akun ${user.full_name || user.email} telah dicabut.`
+      );
+    } catch (err: any) {
+      alert(err.message || "Terjadi kesalahan.");
+    } finally {
+      setApprovingUserId(null);
+    }
+  };
 
   // Open user prompt inspector
   const openUserPrompts = async (user: UserItem) => {
@@ -236,9 +296,16 @@ export default function AdminDashboardPage() {
       const matchesRole =
         userRoleFilter === "all" ? true : u.role === userRoleFilter;
 
-      return matchesSearch && matchesRole;
+      const isPending = !u.is_approved && u.role !== "admin";
+      const isApproved = u.is_approved || u.role === "admin";
+
+      let matchesStatus = true;
+      if (userStatusFilter === "pending") matchesStatus = isPending;
+      if (userStatusFilter === "approved") matchesStatus = isApproved;
+
+      return matchesSearch && matchesRole && matchesStatus;
     });
-  }, [usersList, userSearch, userRoleFilter]);
+  }, [usersList, userSearch, userRoleFilter, userStatusFilter]);
 
   // Filtered global messages
   const filteredGlobalMessages = useMemo(() => {
@@ -342,7 +409,7 @@ export default function AdminDashboardPage() {
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Kelola daftar pengguna, inspeksi prompt percakapan, dan rawat database Supabase
+                Kelola persetujuan akun (ACC), pantau prompt percakapan pengguna, dan rawat database Supabase
               </p>
             </div>
           </div>
@@ -371,7 +438,7 @@ export default function AdminDashboardPage() {
           <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between gap-2 animate-in fade-in">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <span>{actionResult}</span>
+              <span className="font-semibold">{actionResult}</span>
             </div>
             <button
               onClick={() => setActionResult(null)}
@@ -382,38 +449,68 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Stats Cards (4 Grid) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Total Pengguna */}
           <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center gap-4 hover:border-purple-200 transition-colors">
             <div className="p-3 rounded-2xl bg-purple-50 text-purple-600 border border-purple-100 flex-shrink-0">
               <Users className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-xs text-slate-500 font-medium">Total Pengguna Terdaftar</p>
+              <p className="text-xs text-slate-500 font-medium">Total Pengguna</p>
               <p className="text-2xl font-black text-slate-900">{stats.totalUsers}</p>
               <p className="text-[11px] text-purple-600 font-semibold mt-0.5">Semua akun terdaftar</p>
             </div>
           </div>
 
+          {/* Card 2: Menunggu ACC */}
+          <div
+            onClick={() => {
+              setActiveTab("users");
+              setUserStatusFilter("pending");
+            }}
+            className={`p-5 rounded-2xl bg-white border shadow-xs flex items-center gap-4 cursor-pointer transition-all hover:scale-[1.01] ${
+              stats.pendingUsers > 0
+                ? "border-amber-300 bg-amber-50/30"
+                : "border-slate-200 hover:border-amber-200"
+            }`}
+          >
+            <div className="p-3 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex-shrink-0 relative">
+              <Clock className="w-6 h-6" />
+              {stats.pendingUsers > 0 && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full animate-ping" />
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 font-medium">Menunggu ACC</p>
+              <p className="text-2xl font-black text-amber-600">{stats.pendingUsers}</p>
+              <p className="text-[11px] text-amber-700 font-bold mt-0.5">
+                {stats.pendingUsers > 0 ? "⚠️ Butuh persetujuan" : "Semua sudah di-ACC"}
+              </p>
+            </div>
+          </div>
+
+          {/* Card 3: Total Sesi Percakapan */}
           <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center gap-4 hover:border-indigo-200 transition-colors">
             <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex-shrink-0">
               <MessageSquare className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-xs text-slate-500 font-medium">Total Sesi Percakapan</p>
+              <p className="text-xs text-slate-500 font-medium">Sesi Percakapan</p>
               <p className="text-2xl font-black text-slate-900">{stats.totalConversations}</p>
               <p className="text-[11px] text-indigo-600 font-semibold mt-0.5">Topik obrolan aktif</p>
             </div>
           </div>
 
+          {/* Card 4: Total Pesan & Prompt */}
           <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center gap-4 hover:border-cyan-200 transition-colors">
             <div className="p-3 rounded-2xl bg-cyan-50 text-cyan-600 border border-cyan-100 flex-shrink-0">
               <HardDrive className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-xs text-slate-500 font-medium">Total Pesan & Prompt</p>
+              <p className="text-xs text-slate-500 font-medium">Total Prompt</p>
               <p className="text-2xl font-black text-slate-900">{stats.totalMessages}</p>
-              <p className="text-[11px] text-cyan-600 font-semibold mt-0.5">Prompt & balasan tersimpan</p>
+              <p className="text-[11px] text-cyan-600 font-semibold mt-0.5">Prompt & balasan</p>
             </div>
           </div>
         </div>
@@ -478,7 +575,7 @@ export default function AdminDashboardPage() {
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>Daftar Pengguna & Prompt</span>
+            <span>Daftar Pengguna & Persetujuan (ACC)</span>
             <span
               className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
                 activeTab === "users"
@@ -488,6 +585,11 @@ export default function AdminDashboardPage() {
             >
               {usersList.length}
             </span>
+            {stats.pendingUsers > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-900 text-[10px] font-black animate-pulse">
+                {stats.pendingUsers} Pending
+              </span>
+            )}
           </button>
 
           <button
@@ -512,21 +614,73 @@ export default function AdminDashboardPage() {
           </button>
         </div>
 
-        {/* TAB 1: DAFTAR PENGGUNA & INSPEKSI PROMPT */}
+        {/* TAB 1: DAFTAR PENGGUNA & STATUS ACC */}
         {activeTab === "users" && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-0">
             {/* Toolbar */}
-            <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+            <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/50">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Daftar Seluruh Pengguna CIPUY
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <span>Daftar Pengguna & Pengajuan Akun</span>
+                  {stats.pendingUsers > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black border border-amber-200">
+                      {stats.pendingUsers} Belum di-ACC
+                    </span>
+                  )}
                 </h3>
                 <p className="text-[11px] text-slate-400">
-                  Klik pengguna atau tombol &quot;Buka Prompt&quot; untuk melihat isi percakapan mereka
+                  Resmikan (ACC) akun pengguna baru agar dapat masuk dan menggunakan Cipuy
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Status Tabs and Search */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Status Segmented Filter */}
+                <div className="flex p-0.5 bg-slate-200/70 rounded-xl text-xs font-semibold">
+                  <button
+                    onClick={() => setUserStatusFilter("all")}
+                    className={`px-2.5 py-1 rounded-lg transition-all ${
+                      userStatusFilter === "all"
+                        ? "bg-white text-purple-700 shadow-2xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Semua ({usersList.length})
+                  </button>
+                  <button
+                    onClick={() => setUserStatusFilter("pending")}
+                    className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
+                      userStatusFilter === "pending"
+                        ? "bg-amber-500 text-white shadow-2xs font-bold"
+                        : "text-amber-800 hover:text-amber-900"
+                    }`}
+                  >
+                    <span>Belum di-ACC</span>
+                    {stats.pendingUsers > 0 && (
+                      <span
+                        className={`px-1 rounded-full text-[9px] font-bold ${
+                          userStatusFilter === "pending"
+                            ? "bg-amber-600 text-white"
+                            : "bg-amber-200 text-amber-900"
+                        }`}
+                      >
+                        {stats.pendingUsers}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setUserStatusFilter("approved")}
+                    className={`px-2.5 py-1 rounded-lg transition-all ${
+                      userStatusFilter === "approved"
+                        ? "bg-white text-emerald-700 shadow-2xs font-bold"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Diresmikan ({stats.approvedUsers})
+                  </button>
+                </div>
+
+                {/* Search */}
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
@@ -534,14 +688,15 @@ export default function AdminDashboardPage() {
                     placeholder="Cari user / email / nama..."
                     value={userSearch}
                     onChange={(e) => setUserSearch(e.target.value)}
-                    className="text-xs pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-purple-500 w-48 sm:w-60 shadow-2xs"
+                    className="text-xs pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-purple-500 w-44 sm:w-52 shadow-2xs"
                   />
                 </div>
 
+                {/* Role select */}
                 <select
                   value={userRoleFilter}
                   onChange={(e) => setUserRoleFilter(e.target.value as any)}
-                  className="text-xs py-1.5 px-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-purple-500 text-slate-700 shadow-2xs"
+                  className="text-xs py-1.5 px-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-purple-500 text-slate-700 shadow-2xs"
                 >
                   <option value="all">Semua Role</option>
                   <option value="admin">Admin Saja</option>
@@ -556,6 +711,7 @@ export default function AdminDashboardPage() {
                 <thead className="bg-slate-50 text-slate-600 font-semibold uppercase text-[10px] tracking-wider">
                   <tr>
                     <th className="px-5 py-3">Pengguna</th>
+                    <th className="px-4 py-3">Status ACC</th>
                     <th className="px-4 py-3">Role</th>
                     <th className="px-4 py-3 text-center">Sesi Obrolan</th>
                     <th className="px-4 py-3 text-center">Total Prompt</th>
@@ -566,21 +722,31 @@ export default function AdminDashboardPage() {
                 <tbody className="divide-y divide-slate-100">
                   {filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
+                      <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
                         <Users className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                        <p className="font-semibold text-xs">Tidak ada pengguna ditemukan</p>
+                        <p className="font-semibold text-xs">
+                          {userStatusFilter === "pending"
+                            ? "Hebat! Tidak ada akun yang menunggu persetujuan (ACC)."
+                            : "Tidak ada pengguna ditemukan"}
+                        </p>
                       </td>
                     </tr>
                   ) : (
                     filteredUsers.map((user) => {
                       const initial = (user.full_name || user.email || "U").charAt(0).toUpperCase();
                       const isAdminRole = user.role === "admin";
+                      const isApproved = user.is_approved || isAdminRole;
+                      const isPending = !isApproved && !isAdminRole;
+                      const isApproving = approvingUserId === user.id;
 
                       return (
                         <tr
                           key={user.id}
-                          onClick={() => openUserPrompts(user)}
-                          className="hover:bg-purple-50/50 cursor-pointer transition-colors group"
+                          className={`transition-colors group ${
+                            isPending
+                              ? "bg-amber-50/40 hover:bg-amber-50"
+                              : "hover:bg-purple-50/40"
+                          }`}
                         >
                           {/* Pengguna Identity */}
                           <td className="px-5 py-3.5">
@@ -589,15 +755,22 @@ export default function AdminDashboardPage() {
                                 className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shadow-2xs flex-shrink-0 ${
                                   isAdminRole
                                     ? "bg-purple-600 text-white"
+                                    : isPending
+                                    ? "bg-amber-100 text-amber-800 border border-amber-300"
                                     : "bg-indigo-100 text-indigo-700 border border-indigo-200"
                                 }`}
                               >
                                 {initial}
                               </div>
                               <div className="min-w-0">
-                                <p className="font-bold text-slate-900 group-hover:text-purple-700 transition-colors truncate">
-                                  {user.full_name || user.email.split("@")[0]}
-                                </p>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="font-bold text-slate-900 group-hover:text-purple-700 transition-colors truncate">
+                                    {user.full_name || user.email.split("@")[0]}
+                                  </p>
+                                  {isPending && (
+                                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                                  )}
+                                </div>
                                 <p className="text-[11px] text-slate-400 truncate">
                                   {user.email}
                                 </p>
@@ -605,15 +778,34 @@ export default function AdminDashboardPage() {
                             </div>
                           </td>
 
+                          {/* Status ACC Badge */}
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            {isAdminRole ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800 font-extrabold text-[10px] border border-purple-200 inline-flex items-center gap-1">
+                                <ShieldCheck className="w-3 h-3 text-purple-600" />
+                                Super Admin
+                              </span>
+                            ) : isApproved ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-200 inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Diresmikan
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 font-black text-[10px] border border-amber-300 inline-flex items-center gap-1 shadow-2xs">
+                                <Clock className="w-3 h-3 text-amber-600" />
+                                Menunggu ACC
+                              </span>
+                            )}
+                          </td>
+
                           {/* Role Badge */}
                           <td className="px-4 py-3.5 whitespace-nowrap">
                             {isAdminRole ? (
-                              <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800 font-bold text-[10px] border border-purple-200 inline-flex items-center gap-1">
-                                <Sparkles className="w-3 h-3" />
+                              <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-bold text-[10px]">
                                 Admin
                               </span>
                             ) : (
-                              <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[10px] border border-slate-200">
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium text-[10px]">
                                 User
                               </span>
                             )}
@@ -638,13 +830,46 @@ export default function AdminDashboardPage() {
                             {formatDate(user.created_at)}
                           </td>
 
-                          {/* Action Button */}
-                          <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                          {/* Action Buttons */}
+                          <td className="px-5 py-3.5 text-right whitespace-nowrap space-x-1.5">
+                            {/* Tombol Setujui / Cabut ACC */}
+                            {!isAdminRole && (
+                              <>
+                                {isPending ? (
+                                  <button
+                                    disabled={isApproving}
+                                    onClick={() => handleApproveUser(user, true)}
+                                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                                    title="Setujui dan resmikan akun ini"
+                                  >
+                                    <UserCheck className="w-3.5 h-3.5" />
+                                    <span>{isApproving ? "Menyetujui..." : "ACC / Setujui"}</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    disabled={isApproving}
+                                    onClick={() => {
+                                      if (
+                                        confirm(
+                                          `Cabut izin akun ${user.full_name || user.email}? Pengguna tidak akan bisa masuk sampai di-ACC kembali.`
+                                        )
+                                      ) {
+                                        handleApproveUser(user, false);
+                                      }
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 hover:border-rose-200 font-medium text-xs inline-flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50"
+                                    title="Cabut persetujuan akun"
+                                  >
+                                    <UserX className="w-3.5 h-3.5" />
+                                    <span>Cabut ACC</span>
+                                  </button>
+                                )}
+                              </>
+                            )}
+
+                            {/* Tombol Buka Prompt */}
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openUserPrompts(user);
-                              }}
+                              onClick={() => openUserPrompts(user)}
                               className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white border border-purple-200 hover:border-purple-600 font-bold text-xs inline-flex items-center gap-1.5 transition-all shadow-2xs"
                             >
                               <Eye className="w-3.5 h-3.5" />
@@ -787,7 +1012,9 @@ export default function AdminDashboardPage() {
                   className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-sm flex-shrink-0 ${
                     selectedUser.role === "admin"
                       ? "bg-purple-600 text-white"
-                      : "bg-indigo-600 text-white"
+                      : selectedUser.is_approved
+                      ? "bg-indigo-600 text-white"
+                      : "bg-amber-500 text-white"
                   }`}
                 >
                   {(selectedUser.full_name || selectedUser.email).charAt(0).toUpperCase()}
@@ -801,10 +1028,16 @@ export default function AdminDashboardPage() {
                       className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
                         selectedUser.role === "admin"
                           ? "bg-purple-100 text-purple-800 border border-purple-200"
-                          : "bg-slate-100 text-slate-700 border border-slate-200"
+                          : selectedUser.is_approved
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                          : "bg-amber-100 text-amber-900 border border-amber-300"
                       }`}
                     >
-                      {selectedUser.role}
+                      {selectedUser.role === "admin"
+                        ? "Admin"
+                        : selectedUser.is_approved
+                        ? "Diresmikan"
+                        : "Menunggu ACC"}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 truncate">
@@ -814,6 +1047,29 @@ export default function AdminDashboardPage() {
               </div>
 
               <div className="flex items-center gap-2 flex-shrink-0">
+                {/* Quick ACC inside modal */}
+                {selectedUser.role !== "admin" && (
+                  <>
+                    {!selectedUser.is_approved ? (
+                      <button
+                        onClick={() => handleApproveUser(selectedUser, true)}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>ACC Akun Ini</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleApproveUser(selectedUser, false)}
+                        className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 transition-all"
+                      >
+                        <UserX className="w-3.5 h-3.5" />
+                        <span>Cabut ACC</span>
+                      </button>
+                    )}
+                  </>
+                )}
+
                 <button
                   onClick={() => openUserPrompts(selectedUser)}
                   className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs flex items-center gap-1 transition-all"

@@ -67,8 +67,34 @@ export async function POST(req: NextRequest) {
     let conversationId = incomingConvId;
     let newConversationTitle = "";
 
-    // 1. Simpan sesi percakapan baru jika belum ada
+    // 1. Verifikasi persetujuan akun & simpan sesi percakapan baru
     if (user) {
+      // Periksa status persetujuan akun (kecuali admin/owner)
+      const isOwner =
+        user.email?.includes("admin") ||
+        user.user_metadata?.username === "faidhil" ||
+        user.user_metadata?.username === "faidhil27";
+
+      if (!isOwner) {
+        const { data: profile } = await adminSupabase
+          .from("profiles")
+          .select("role, is_approved")
+          .eq("id", user.id)
+          .single();
+
+        const isApproved =
+          profile?.role === "admin" ||
+          profile?.is_approved === true ||
+          user.user_metadata?.is_approved === true;
+
+        if (!isApproved) {
+          return NextResponse.json(
+            { error: "Akun ini belum diresmikan, hubungi admin" },
+            { status: 403 }
+          );
+        }
+      }
+
       if (!conversationId) {
         newConversationTitle =
           prompt.trim().slice(0, 35) + (prompt.length > 35 ? "..." : "");

@@ -29,6 +29,16 @@ export async function POST(req: NextRequest) {
 
     const adminSupabase = createAdminClient();
 
+    // Periksa apakah ini akun pertama atau akun owner Faidhil
+    const { count } = await adminSupabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true });
+
+    const isFirstUser = !count || count === 0;
+    const isOwner = cleanUsername === "faidhil" || cleanUsername === "faidhil27" || isFirstUser;
+    const role = isOwner ? "admin" : "user";
+    const isApproved = isOwner ? true : false;
+
     // Buat user langsung terkonfirmasi (email_confirm: true)
     // Pengguna TIDAK AKAN PERNAH diminta verifikasi email!
     const { data: newUser, error: createError } =
@@ -39,6 +49,8 @@ export async function POST(req: NextRequest) {
         user_metadata: {
           full_name: fullName || username,
           username: cleanUsername,
+          role,
+          is_approved: isApproved,
         },
       });
 
@@ -58,7 +70,8 @@ export async function POST(req: NextRequest) {
           id: newUser.user.id,
           email: newUser.user.email,
           full_name: fullName || username,
-          role: "user",
+          role,
+          is_approved: isApproved,
         },
         { onConflict: "id" }
       );
@@ -66,11 +79,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Akun berhasil dibuat! Silakan masuk.",
+      pendingApproval: !isApproved,
+      message: isApproved
+        ? "Akun Administrator berhasil dibuat! Silakan masuk."
+        : "Pengajuan akun berhasil dikirim! Akun Anda sedang menunggu persetujuan (ACC) dari Admin sebelum dapat digunakan.",
       user: {
         id: newUser.user.id,
         email: newUser.user.email,
         username: cleanUsername,
+        isApproved,
       },
     });
   } catch (error: any) {
@@ -81,4 +98,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

@@ -75,14 +75,32 @@ export default function Home() {
 
         setUser(currentUser);
 
-        // Check if user is admin
+        // Check if user is admin and approved
         const { data: profile } = await supabase
           .from("profiles")
-          .select("role")
+          .select("role, is_approved")
           .eq("id", currentUser.id)
           .single();
 
-        if (profile?.role === "admin") {
+        const isOwner =
+          currentUser.email?.includes("admin") ||
+          currentUser.user_metadata?.username === "faidhil" ||
+          currentUser.user_metadata?.username === "faidhil27";
+
+        const isAdminUser = profile?.role === "admin" || isOwner;
+        const isApproved =
+          isAdminUser ||
+          profile?.is_approved === true ||
+          currentUser.user_metadata?.is_approved === true;
+
+        // Jika akun belum diresmikan oleh admin, tolak akses dan keluarkan
+        if (!isApproved) {
+          await supabase.auth.signOut();
+          router.push("/login?error=unapproved");
+          return;
+        }
+
+        if (isAdminUser) {
           setIsAdmin(true);
         }
 

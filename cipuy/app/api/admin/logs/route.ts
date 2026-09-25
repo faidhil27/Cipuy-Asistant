@@ -39,30 +39,48 @@ export async function GET(req: NextRequest) {
     if (targetUserId) {
       // 1. Ambil data profile user
       let targetUser: any = null;
-      const { data: targetProfile } = await adminSupabase
+      let { data: targetProfile } = await adminSupabase
         .from("profiles")
-        .select("id, email, full_name, role, created_at")
+        .select("id, email, full_name, role, is_approved, created_at")
         .eq("id", targetUserId)
         .single();
 
+      // Jika query gagal karena kolom is_approved belum dimigrasi di database:
+      if (!targetProfile) {
+        const { data: fallbackProfile } = await adminSupabase
+          .from("profiles")
+          .select("id, email, full_name, role, created_at")
+          .eq("id", targetUserId)
+          .single();
+        targetProfile = fallbackProfile as any;
+      }
+
+      const { data: authUserData } = await adminSupabase.auth.admin.getUserById(targetUserId);
+
       if (targetProfile) {
-        targetUser = targetProfile;
-      } else {
-        // Fallback ke auth.users
-        const { data: authUserData } = await adminSupabase.auth.admin.getUserById(targetUserId);
-        if (authUserData?.user) {
-          targetUser = {
-            id: authUserData.user.id,
-            email: authUserData.user.email,
-            full_name:
-              authUserData.user.user_metadata?.full_name ||
-              authUserData.user.user_metadata?.username ||
-              authUserData.user.email?.split("@")[0] ||
-              "Pengguna",
-            role: "user",
-            created_at: authUserData.user.created_at,
-          };
-        }
+        targetUser = {
+          ...targetProfile,
+          is_approved:
+            targetProfile.role === "admin" ||
+            targetProfile.is_approved === true ||
+            authUserData?.user?.user_metadata?.is_approved === true,
+        };
+      } else if (authUserData?.user) {
+        const isOwner =
+          authUserData.user.email?.includes("admin") ||
+          authUserData.user.user_metadata?.username === "faidhil";
+        targetUser = {
+          id: authUserData.user.id,
+          email: authUserData.user.email,
+          full_name:
+            authUserData.user.user_metadata?.full_name ||
+            authUserData.user.user_metadata?.username ||
+            authUserData.user.email?.split("@")[0] ||
+            "Pengguna",
+          role: isOwner ? "admin" : "user",
+          is_approved: isOwner || authUserData.user.user_metadata?.is_approved === true,
+          created_at: authUserData.user.created_at,
+        };
       }
 
       // 2. Ambil seluruh percakapan milik user
@@ -110,13 +128,24 @@ export async function GET(req: NextRequest) {
     // ========================================================
     // MODE 2: LIST SEMUA PENGGUNA & STATISTIK GLOBAL
     // ========================================================
-    // Ambil profiles dari database
-    const { data: allProfiles } = await adminSupabase
+    // Ambil profiles dari database (dengan fallback kolom is_approved)
+    let allProfiles: any[] = [];
+    const { data: profData, error: profErr } = await adminSupabase
       .from("profiles")
-      .select("id, email, full_name, role, created_at")
+      .select("id, email, full_name, role, is_approved, created_at")
       .order("created_at", { ascending: false });
 
-    // Coba ambil juga dari Supabase Auth untuk kelengkapan
+    if (profErr) {
+      const { data: fallbackProf } = await adminSupabase
+        .from("profiles")
+        .select("id, email, full_name, role, created_at")
+        .order("created_at", { ascending: false });
+      allProfiles = fallbackProf || [];
+    } else {
+      allProfiles = profData || [];
+    }
+
+    // Ambil juga data dari Supabase Auth
     let authUsers: any[] = [];
     try {
       const { data: authData } = await adminSupabase.auth.admin.listUsers();
@@ -124,17 +153,36 @@ export async function GET(req: NextRequest) {
         authUsers = authData.users;
       }
     } catch {
-      // Ignore if listUsers not allowed
+      // Ignore if listUsers fails
     }
+
+    const authUsersMap = new Map<string, any>(authUsers.map((u) => [u.id, u]));
 
     // Gabungkan profiles dan authUsers tanpa duplikasi
     const profilesMap = new Map<string, any>();
-    (allProfiles || []).forEach((p) => {
-      profilesMap.set(p.id, p);
+    allProfiles.forEach((p) => {
+      const authU = authUsersMap.get(p.id);
+      const isApproved =
+        p.role === "admin" ||
+        p.is_approved === true ||
+        authU?.user_metadata?.is_approved === true;
+
+      profilesMap.set(p.id, {
+        ...p,
+        is_approved: isApproved,
+      });
     });
 
     authUsers.forEach((u) => {
       if (!profilesMap.has(u.id)) {
+        const isOwner =
+          u.email?.includes("admin") ||
+          u.user_metadata?.username === "faidhil" ||
+          u.user_metadata?.username === "faidhil27";
+
+        const isApproved =
+          isOwner || u.user_metadata?.is_approved === true;
+
         profilesMap.set(u.id, {
           id: u.id,
           email: u.email,
@@ -143,7 +191,8 @@ export async function GET(req: NextRequest) {
             u.user_metadata?.username ||
             u.email?.split("@")[0] ||
             "Pengguna",
-          role: "user",
+          role: isOwner ? "admin" : "user",
+          is_approved: isApproved,
           created_at: u.created_at,
         });
       }
@@ -182,8 +231,21 @@ export async function GET(req: NextRequest) {
       messagesCount: msgCounts[u.id] || 0,
     }));
 
-    // Sorting: Admin first, then users with most messages / newest
+    // Hitung statistik persetujuan akun
+    const pendingUsersCount = usersWithStats.filter(
+      (u) => !u.is_approved && u.role !== "admin"
+    ).length;
+
+    const approvedUsersCount = usersWithStats.filter(
+      (u) => u.is_approved || u.role === "admin"
+    ).length;
+
+    // Sorting: Akun pending / belum di-ACC tampil di atas, lalu Admin, lalu paling banyak pesan
     usersWithStats.sort((a, b) => {
+      const aPending = !a.is_approved && a.role !== "admin";
+      const bPending = !b.is_approved && b.role !== "admin";
+      if (aPending && !bPending) return -1;
+      if (!aPending && bPending) return 1;
       if (a.role === "admin" && b.role !== "admin") return -1;
       if (b.role === "admin" && a.role !== "admin") return 1;
       return (b.messagesCount || 0) - (a.messagesCount || 0);
@@ -202,6 +264,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       stats: {
         totalUsers: combinedUsers.length,
+        pendingUsers: pendingUsersCount,
+        approvedUsers: approvedUsersCount,
         totalConversations: rawConversations?.length || 0,
         totalMessages: rawMessages?.length || 0,
       },
